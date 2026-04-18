@@ -359,6 +359,7 @@ function shoot() {
     if (ammo <= 0) return;
 
     ammo--; updateHUD();
+    playGunshot();
 
     weapon.position.z = -0.3;
     setTimeout(() => { weapon.position.z = -0.4; }, 50);
@@ -568,4 +569,45 @@ function animate() {
 
     prevTime = time;
     renderer.render(scene, camera);
+}
+
+let audioCtx = null;
+
+function initAudio() {
+    if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+    }
+}
+
+function playGunshot() {
+    initAudio();
+    if (!audioCtx) return;
+    
+    const bufferSize = audioCtx.sampleRate * 0.3; 
+    const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+    const data = buffer.getChannelData(0);
+    
+    for (let i = 0; i < bufferSize; i++) {
+        data[i] = Math.random() * 2 - 1;
+    }
+    
+    const noiseSource = audioCtx.createBufferSource();
+    noiseSource.buffer = buffer;
+    
+    const filter = audioCtx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 1500;
+    
+    const gainNode = audioCtx.createGain();
+    gainNode.gain.setValueAtTime(0.8, audioCtx.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+    
+    noiseSource.connect(filter);
+    filter.connect(gainNode);
+    gainNode.connect(audioCtx.destination);
+    
+    noiseSource.start();
 }
