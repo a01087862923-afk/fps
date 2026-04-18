@@ -20,7 +20,7 @@ let joystickMoveY = 0;
 let touchLookPreviousX = 0;
 let touchLookPreviousY = 0;
 const euler = new THREE.Euler(0, 0, 0, 'YXZ');
-const PI_2 = Math.PI / 2 - 0.001; // 약간의 여백
+const PI_2 = Math.PI / 2 - 0.001; 
 let isTouchLocked = false;
 
 let prevTime = performance.now();
@@ -39,8 +39,12 @@ const blocker = document.getElementById('blocker');
 const instructions = document.getElementById('instructions');
 const mobileUI = document.getElementById('mobile-ui');
 
-// 무기 모델
+// 무기 모델 및 스위칭
 let weapon;
+let gunGroup, knifeGroup;
+let currentWeaponIndex = 0; // 0: Gun, 1: Knife
+let isSwitching = false;
+let knifeSpinAngle = 0;
 
 init();
 animate();
@@ -72,13 +76,12 @@ function init() {
     scene.add(controls.getObject());
 
     if (isMobile) {
-        // 모바일 UI 활성화 및 기존 UI 숨김
         mobileUI.style.display = 'block';
         blocker.style.display = 'none';
         setupMobileControls();
     } else {
-        // 데스크톱 제어
         instructions.addEventListener('click', function () {
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             controls.lock();
         });
         controls.addEventListener('lock', function () {
@@ -125,9 +128,8 @@ function init() {
 }
 
 function setupMobileControls() {
-    isTouchLocked = true; // 모바일은 항상 활성화 상태로 취급
+    isTouchLocked = true;
 
-    // 점프 버튼
     const jumpBtn = document.getElementById('mobile-jump-btn');
     jumpBtn.addEventListener('touchstart', (e) => {
         e.preventDefault();
@@ -135,14 +137,22 @@ function setupMobileControls() {
         canJump = false;
     }, {passive: false});
 
-    // 재장전 버튼
     const reloadBtn = document.getElementById('mobile-reload-btn');
     reloadBtn.addEventListener('touchstart', (e) => {
         e.preventDefault();
         reload();
     }, {passive: false});
+    
+    // 무기 스위치 버튼
+    document.getElementById('mobile-gun-btn').addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        switchWeapon(0);
+    }, {passive: false});
+    document.getElementById('mobile-knife-btn').addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        switchWeapon(1);
+    }, {passive: false});
 
-    // 조이스틱
     const joystickZone = document.getElementById('joystick-zone');
     const joystickStick = document.getElementById('joystick-stick');
     let joystickActive = false;
@@ -176,7 +186,7 @@ function setupMobileControls() {
     function updateJoystick(touch) {
         let dx = touch.clientX - stickCenter.x;
         let dy = touch.clientY - stickCenter.y;
-        const maxDist = 50; // 조이스틱 최대 이동 반경
+        const maxDist = 50; 
         const dist = Math.sqrt(dx*dx + dy*dy);
         
         if (dist > maxDist) {
@@ -185,19 +195,17 @@ function setupMobileControls() {
         }
 
         joystickStick.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
-        
-        // 방향 계산 (1.0 기준)
         joystickMoveX = dx / maxDist;
         joystickMoveY = dy / maxDist;
     }
 
-    // 시야 및 사격 (오른쪽 영역)
     const lookZone = document.getElementById('touch-look-zone');
     let touchLookActive = false;
     let lookTouchId = null;
-    let isTap = true; // 사격 판정용
+    let isTap = true; 
 
     lookZone.addEventListener('touchstart', (e) => {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         e.preventDefault();
         const touch = e.changedTouches[0];
         lookTouchId = touch.identifier;
@@ -218,11 +226,10 @@ function setupMobileControls() {
                 const movementY = touch.clientY - touchLookPreviousY;
                 
                 if (Math.abs(movementX) > 2 || Math.abs(movementY) > 2) {
-                    isTap = false; // 움직임이 크면 탭(사격)이 아님
+                    isTap = false; 
                 }
 
                 euler.setFromQuaternion(camera.quaternion);
-                // Three.js PointerLockControls와 유사한 시야 회전 적용
                 euler.y -= movementX * 0.005;
                 euler.x -= movementY * 0.005;
                 euler.x = Math.max(-PI_2, Math.min(PI_2, euler.x));
@@ -255,6 +262,8 @@ const onKeyDown = function (event) {
         case 'ArrowRight': case 'KeyD': moveRight = true; break;
         case 'Space': if (canJump === true) velocity.y += 10; canJump = false; break;
         case 'KeyR': reload(); break;
+        case 'Digit1': switchWeapon(0); break;
+        case 'Digit2': switchWeapon(1); break;
     }
 };
 
@@ -284,100 +293,236 @@ function createEnvironment() {
 }
 
 function createWeapon() {
-    const weaponGroup = new THREE.Group();
+    weapon = new THREE.Group();
+    camera.add(weapon);
+    
+    // --- 총 생성 ---
+    gunGroup = new THREE.Group();
     const bodyGeometry = new THREE.BoxGeometry(0.1, 0.1, 0.5);
     const material = new THREE.MeshStandardMaterial({ color: 0x333333, metalness: 0.8, roughness: 0.2 });
-    weaponGroup.add(new THREE.Mesh(bodyGeometry, material));
+    gunGroup.add(new THREE.Mesh(bodyGeometry, material));
     
     const barrelGeometry = new THREE.CylinderGeometry(0.03, 0.03, 0.4);
     barrelGeometry.rotateX(Math.PI / 2);
     const barrelMaterial = new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.9, roughness: 0.1 });
     const barrel = new THREE.Mesh(barrelGeometry, barrelMaterial);
     barrel.position.z = -0.4;
-    weaponGroup.add(barrel);
+    gunGroup.add(barrel);
     
     const detailGeometry = new THREE.IcosahedronGeometry(0.06, 0);
     const detailMaterial = new THREE.MeshStandardMaterial({ color: 0x00ffcc, emissive: 0x00ffcc, emissiveIntensity: 0.5, wireframe: true });
     const detail = new THREE.Mesh(detailGeometry, detailMaterial);
     detail.position.set(0, 0.05, -0.1);
-    weaponGroup.add(detail);
+    gunGroup.add(detail);
 
-    weaponGroup.position.set(0.2, -0.2, -0.4);
-    camera.add(weaponGroup);
-    weapon = weaponGroup;
+    gunGroup.position.set(0.2, -0.2, -0.4);
+    weapon.add(gunGroup);
+    
+    // --- 칼 생성 ---
+    knifeGroup = new THREE.Group();
+    const handleMat = new THREE.MeshStandardMaterial({ color: 0x5c4033, roughness: 0.9 });
+    const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.15), handleMat);
+    handle.rotation.x = Math.PI / 2;
+    handle.position.z = 0.1;
+    knifeGroup.add(handle);
+    
+    const bladeMat = new THREE.MeshStandardMaterial({ color: 0xdddddd, metalness: 1.0, roughness: 0.2 });
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.04, 0.3), bladeMat);
+    
+    // 칼날 한쪽 뾰족하게 깎기
+    const bladeGeo = blade.geometry;
+    const positions = bladeGeo.attributes.position;
+    for(let i=0; i<positions.count; i++) {
+        if(positions.getZ(i) < 0 && positions.getY(i) > 0) {
+            positions.setY(i, 0); // 위쪽을 깎아서 뾰족하게
+        }
+    }
+    bladeGeo.computeVertexNormals();
+    blade.position.z = -0.15;
+    knifeGroup.add(blade);
+    
+    knifeGroup.position.set(0.2, -0.2, -0.4);
+    weapon.add(knifeGroup);
+    
+    // 기본 설정
+    gunGroup.visible = true;
+    knifeGroup.visible = false;
+}
+
+function switchWeapon(index) {
+    if (isSwitching || currentWeaponIndex === index) return;
+    currentWeaponIndex = index;
+    isSwitching = true;
+    
+    if (isMobile) {
+        document.getElementById('mobile-gun-btn').classList.toggle('active', index === 0);
+        document.getElementById('mobile-knife-btn').classList.toggle('active', index === 1);
+    }
+    
+    const dropTime = 200; 
+    let startTime = performance.now();
+    
+    function animateDrop() {
+        let elapsed = performance.now() - startTime;
+        if (elapsed < dropTime) {
+            weapon.position.y = - (elapsed / dropTime) * 0.8;
+            requestAnimationFrame(animateDrop);
+        } else {
+            gunGroup.visible = (index === 0);
+            knifeGroup.visible = (index === 1);
+            
+            if (index === 1) {
+                knifeSpinAngle = Math.PI * 4; // 칼 2바퀴 돌리기
+            } else {
+                knifeGroup.rotation.set(0, 0, 0);
+            }
+            
+            startTime = performance.now();
+            function animateRaise() {
+                let elapsed2 = performance.now() - startTime;
+                if (elapsed2 < dropTime) {
+                    let progress = elapsed2 / dropTime;
+                    weapon.position.y = -0.8 + progress * 0.8;
+                    
+                    if (index === 1) {
+                        knifeGroup.rotation.x = knifeSpinAngle * (1 - progress);
+                    }
+                    
+                    requestAnimationFrame(animateRaise);
+                } else {
+                    weapon.position.y = 0;
+                    if (index === 1) knifeGroup.rotation.x = 0;
+                    isSwitching = false;
+                    updateHUD(); // 탄약 표시 업데이트
+                }
+            }
+            animateRaise();
+        }
+    }
+    animateDrop();
 }
 
 function spawnEnemies() {
-    const geometries = [
-        new THREE.TorusKnotGeometry(0.5, 0.15, 64, 8),
-        new THREE.DodecahedronGeometry(0.6),
-        new THREE.IcosahedronGeometry(0.6),
-        new THREE.OctahedronGeometry(0.6, 1)
-    ];
-
-    for (let i = 0; i < 20; i++) {
-        spawnSingleEnemy(geometries, false);
+    for (let i = 0; i < 15; i++) {
+        spawnSingleEnemy();
     }
 }
 
-function spawnSingleEnemy(geometries = null, checkDistance = true) {
-    if (!geometries) {
-        geometries = [
-            new THREE.TorusKnotGeometry(0.5, 0.15, 64, 8),
-            new THREE.DodecahedronGeometry(0.6),
-            new THREE.IcosahedronGeometry(0.6)
-        ];
-    }
-    const geo = geometries[Math.floor(Math.random() * geometries.length)];
-    const mat = new THREE.MeshStandardMaterial({
-        color: new THREE.Color().setHSL(Math.random(), 1.0, 0.5),
-        metalness: 0.3, roughness: 0.2,
-        emissive: new THREE.Color().setHSL(Math.random(), 1.0, 0.2)
-    });
-    const enemy = new THREE.Mesh(geo, mat);
+function spawnSingleEnemy() {
+    const humanoid = new THREE.Group();
     
-    let validPosition = false;
-    while (!validPosition) {
-        enemy.position.set((Math.random() - 0.5) * 80, Math.random() * 3 + 1, (Math.random() - 0.5) * 80);
-        if (!checkDistance || enemy.position.distanceTo(camera.position) > 10) validPosition = true;
-    }
+    const hue = Math.random();
+    const headMat = new THREE.MeshStandardMaterial({ color: new THREE.Color().setHSL(hue, 0.8, 0.6), roughness: 0.4 });
+    const bodyMat = new THREE.MeshStandardMaterial({ color: new THREE.Color().setHSL(hue, 0.6, 0.4), roughness: 0.6 });
+    const legMat = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.8 });
     
-    enemy.userData = {
-        rotX: (Math.random() - 0.5) * 0.05,
-        rotY: (Math.random() - 0.5) * 0.05,
-        moveSpeed: Math.random() * 0.02 + 0.01,
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.6), headMat);
+    head.position.y = 2.6;
+    head.name = 'head';
+    head.castShadow = true;
+    humanoid.add(head);
+    
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.2, 0.5), bodyMat);
+    body.position.y = 1.7;
+    body.name = 'body';
+    body.castShadow = true;
+    humanoid.add(body);
+    
+    const leftLeg = new THREE.Mesh(new THREE.BoxGeometry(0.35, 1.1, 0.35), legMat);
+    leftLeg.position.set(-0.25, 0.55, 0);
+    leftLeg.name = 'legs';
+    leftLeg.castShadow = true;
+    humanoid.add(leftLeg);
+    
+    const rightLeg = new THREE.Mesh(new THREE.BoxGeometry(0.35, 1.1, 0.35), legMat);
+    rightLeg.position.set(0.25, 0.55, 0);
+    rightLeg.name = 'legs';
+    rightLeg.castShadow = true;
+    humanoid.add(rightLeg);
+    
+    humanoid.userData = {
+        isHumanoid: true,
+        health: 12,
+        leftLeg: leftLeg,
+        rightLeg: rightLeg,
+        walkCycle: Math.random() * Math.PI * 2,
+        moveSpeed: Math.random() * 2 + 1.5,
         moveDir: new THREE.Vector3((Math.random()-0.5), 0, (Math.random()-0.5)).normalize()
     };
     
-    enemy.castShadow = true;
-    scene.add(enemy);
-    enemies.push(enemy);
+    let validPosition = false;
+    while (!validPosition) {
+        humanoid.position.set((Math.random() - 0.5) * 80, 0, (Math.random() - 0.5) * 80);
+        if (humanoid.position.distanceTo(camera.position) > 15) validPosition = true;
+    }
+    
+    scene.add(humanoid);
+    enemies.push(humanoid);
 }
 
 function shoot() {
-    if ((!isMobile && !controls.isLocked) || isReloading) return;
-    if (ammo <= 0) return;
+    if ((!isMobile && !controls.isLocked) || isSwitching) return;
+    
+    if (currentWeaponIndex === 0) {
+        // 총 사격
+        if (isReloading || ammo <= 0) return;
+        ammo--; updateHUD();
+        playGunshot();
+        
+        gunGroup.position.z = -0.3;
+        setTimeout(() => { gunGroup.position.z = -0.4; }, 50);
+        createMuzzleFlash();
+        
+        raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+        raycaster.far = 1000;
+    } else {
+        // 칼 공격
+        playKnifeSwing();
+        knifeGroup.position.z = -0.7;
+        knifeGroup.rotation.y = -Math.PI / 4;
+        setTimeout(() => { 
+            knifeGroup.position.z = -0.4; 
+            knifeGroup.rotation.y = 0;
+        }, 150);
+        
+        raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+        raycaster.far = 3.0; // 근거리
+    }
 
-    ammo--; updateHUD();
-    playGunshot();
-
-    weapon.position.z = -0.3;
-    setTimeout(() => { weapon.position.z = -0.4; }, 50);
-
-    createMuzzleFlash();
-    raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
-    const intersects = raycaster.intersectObjects([...enemies, ...objects], false);
+    // recursive: true 로 설정하여 그룹 내의 부위(Mesh)까지 검사
+    const intersects = raycaster.intersectObjects([...enemies, ...objects], true);
 
     if (intersects.length > 0) {
         const hitObject = intersects[0].object;
-        const index = enemies.indexOf(hitObject);
-        if (index > -1) {
-            scene.remove(hitObject);
-            enemies.splice(index, 1);
-            createExplosion(hitObject.position, hitObject.material.color);
-            score += 100; updateHUD();
+        
+        // 인간형 적 피격 판별
+        if (hitObject.parent && hitObject.parent.userData && hitObject.parent.userData.isHumanoid) {
+            const humanoid = hitObject.parent;
+            const part = hitObject.name;
+            
+            let damage = 0;
+            if (part === 'head') damage = 12; // 1방
+            else if (part === 'body') damage = 4; // 3방
+            else if (part === 'legs') damage = 3; // 4방
+            
+            humanoid.userData.health -= damage;
+            
+            if (currentWeaponIndex === 0) {
+                createExplosion(intersects[0].point, hitObject.material.color);
+            } else {
+                playKnifeHit();
+                createExplosion(intersects[0].point, new THREE.Color(0xff0000)); // 피 효과
+            }
+            
             showHitMarker();
-            setTimeout(() => { spawnSingleEnemy(); }, 2000);
+            
+            if (humanoid.userData.health <= 0) {
+                scene.remove(humanoid);
+                const index = enemies.indexOf(humanoid);
+                if (index > -1) enemies.splice(index, 1);
+                score += 100; updateHUD();
+                setTimeout(() => { spawnSingleEnemy(); }, 2000);
+            }
         }
     }
 }
@@ -434,14 +579,14 @@ function createExplosion(position, color) {
 }
 
 function reload() {
-    if (isReloading || ammo === maxAmmo) return;
+    if (isReloading || ammo === maxAmmo || currentWeaponIndex === 1) return;
     isReloading = true;
     ammoElement.innerHTML = `RELOADING...`;
     ammoElement.style.color = '#ffaa00';
-    const startY = weapon.position.y;
-    weapon.position.y -= 0.5;
+    const startY = gunGroup.position.y;
+    gunGroup.position.y -= 0.5;
     setTimeout(() => {
-        ammo = maxAmmo; isReloading = false; weapon.position.y = startY; updateHUD();
+        ammo = maxAmmo; isReloading = false; gunGroup.position.y = startY; updateHUD();
     }, 1500);
 }
 
@@ -460,8 +605,13 @@ function showHitMarker() {
 
 function updateHUD() {
     scoreElement.innerHTML = `SCORE: ${score}`;
-    ammoElement.innerHTML = `AMMO: ${ammo} / ${maxAmmo}`;
-    ammoElement.style.color = ammo <= 5 ? '#ff0000' : '#ffffff';
+    if (currentWeaponIndex === 0) {
+        ammoElement.style.display = 'block';
+        ammoElement.innerHTML = `AMMO: ${ammo} / ${maxAmmo}`;
+        ammoElement.style.color = ammo <= 5 ? '#ff0000' : '#ffffff';
+    } else {
+        ammoElement.style.display = 'none'; // 칼일 때는 탄약 숨김
+    }
 }
 
 function onWindowResize() {
@@ -473,27 +623,25 @@ function onWindowResize() {
 function animate() {
     requestAnimationFrame(animate);
     const time = performance.now();
+    const delta = (time - prevTime) / 1000;
 
     if (controls.isLocked === true || isTouchLocked) {
         raycaster.ray.origin.copy(camera.position);
         raycaster.ray.origin.y -= 1.6;
         
         let playerPos = camera.position.clone();
-        const delta = (time - prevTime) / 1000;
 
         velocity.x -= velocity.x * 10.0 * delta;
         velocity.z -= velocity.z * 10.0 * delta;
         velocity.y -= 9.8 * 3.0 * delta;
 
-        // PC 키보드 입력
         direction.z = Number(moveForward) - Number(moveBackward);
         direction.x = Number(moveRight) - Number(moveLeft);
         direction.normalize();
 
-        // 모바일 조이스틱 입력 (PC 입력과 섞임)
         if (isMobile) {
             direction.x = joystickMoveX;
-            direction.z = -joystickMoveY; // 화면의 Y축과 3D의 Z축 반대
+            direction.z = -joystickMoveY; 
         }
 
         const speedMultiplier = 50.0;
@@ -502,12 +650,6 @@ function animate() {
             velocity.x -= direction.x * speedMultiplier * delta;
         }
 
-        // --- 수정된 Sliding 충돌 검사 (X, Z 분리) ---
-        // X축 임시 위치 계산
-        let nextX = playerPos.x + velocity.x * delta;
-        let nextZ = playerPos.z + velocity.z * delta;
-        
-        // 회전을 고려한 이동 벡터 계산
         const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
         forward.y = 0;
         forward.normalize();
@@ -525,31 +667,22 @@ function animate() {
 
         let collisionX = false;
         let collisionZ = false;
-        const playerRadius = 0.6; // 벽과 너무 붙지 않게 여유 추가
+        const playerRadius = 0.6; 
 
         for (let i = 0; i < objects.length; i++) {
             const wall = objects[i];
-            
-            // X축 충돌 검사 (Z는 원래 위치 기준)
             const dxX = Math.abs(finalNextX - wall.position.x);
             const dzOriginal = Math.abs(playerPos.z - wall.position.z);
-            if (dxX < 1 + playerRadius && dzOriginal < 1 + playerRadius) {
-                collisionX = true;
-            }
+            if (dxX < 1 + playerRadius && dzOriginal < 1 + playerRadius) collisionX = true;
 
-            // Z축 충돌 검사 (X는 원래 위치 기준)
             const dxOriginal = Math.abs(playerPos.x - wall.position.x);
             const dzZ = Math.abs(finalNextZ - wall.position.z);
-            if (dzZ < 1 + playerRadius && dxOriginal < 1 + playerRadius) {
-                collisionZ = true;
-            }
+            if (dzZ < 1 + playerRadius && dxOriginal < 1 + playerRadius) collisionZ = true;
         }
 
-        // 충돌하지 않은 축만 이동 적용
         if (!collisionX) camera.position.x = finalNextX;
         if (!collisionZ) camera.position.z = finalNextZ;
 
-        // Y축 (점프/중력)
         camera.position.y += (velocity.y * delta);
 
         if (camera.position.y < 1.6) {
@@ -558,49 +691,55 @@ function animate() {
             canJump = true;
         }
 
-        if ((direction.x !== 0 || direction.z !== 0) && canJump) {
+        if ((direction.x !== 0 || direction.z !== 0) && canJump && !isSwitching) {
             weapon.position.y = -0.2 + Math.sin(time * 0.01) * 0.02;
             weapon.position.x = 0.2 + Math.cos(time * 0.005) * 0.02;
-        } else {
+        } else if (!isSwitching) {
             weapon.position.y += (-0.2 - weapon.position.y) * 0.1;
             weapon.position.x += (0.2 - weapon.position.x) * 0.1;
         }
     }
 
+    // 인간형 적 애니메이션 (걷기)
     enemies.forEach(enemy => {
-        enemy.rotation.x += enemy.userData.rotX;
-        enemy.rotation.y += enemy.userData.rotY;
-        enemy.position.add(enemy.userData.moveDir.clone().multiplyScalar(enemy.userData.moveSpeed));
+        // 이동 로직
+        enemy.position.add(enemy.userData.moveDir.clone().multiplyScalar(enemy.userData.moveSpeed * delta));
+        
+        // 경계 반사
         if (enemy.position.x > 40 || enemy.position.x < -40) enemy.userData.moveDir.x *= -1;
         if (enemy.position.z > 40 || enemy.position.z < -40) enemy.userData.moveDir.z *= -1;
+        
+        // 이동 방향 바라보기
+        const lookTarget = enemy.position.clone().add(enemy.userData.moveDir);
+        enemy.lookAt(lookTarget);
+        
+        // 다리 교차 애니메이션
+        enemy.userData.walkCycle += delta * 15;
+        enemy.userData.leftLeg.rotation.x = Math.sin(enemy.userData.walkCycle) * 0.6;
+        enemy.userData.rightLeg.rotation.x = Math.cos(enemy.userData.walkCycle) * 0.6;
     });
 
     prevTime = time;
     renderer.render(scene, camera);
 }
 
+// --- 오디오 처리 ---
 let audioCtx = null;
 
 function initAudio() {
-    if (!audioCtx) {
-        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    }
-    if (audioCtx.state === 'suspended') {
-        audioCtx.resume();
-    }
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
 }
 
 function playGunshot() {
     initAudio();
     if (!audioCtx) return;
     
-    // 1. 노이즈 (High frequency snap)
     const bufferSize = audioCtx.sampleRate * 0.2; 
     const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
     const data = buffer.getChannelData(0);
-    for (let i = 0; i < bufferSize; i++) {
-        data[i] = Math.random() * 2 - 1;
-    }
+    for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+    
     const noiseSource = audioCtx.createBufferSource();
     noiseSource.buffer = buffer;
     
@@ -616,7 +755,6 @@ function playGunshot() {
     noiseFilter.connect(noiseGain);
     noiseGain.connect(audioCtx.destination);
     
-    // 2. 오실레이터 (Low frequency thump)
     const osc = audioCtx.createOscillator();
     osc.type = 'triangle';
     osc.frequency.setValueAtTime(200, audioCtx.currentTime);
@@ -632,4 +770,41 @@ function playGunshot() {
     noiseSource.start();
     osc.start();
     osc.stop(audioCtx.currentTime + 0.2);
+}
+
+function playKnifeSwing() {
+    initAudio();
+    if (!audioCtx) return;
+    const osc = audioCtx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(600, audioCtx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(200, audioCtx.currentTime + 0.1);
+    
+    const gain = audioCtx.createGain();
+    gain.gain.setValueAtTime(0, audioCtx.currentTime);
+    gain.gain.linearRampToValueAtTime(0.5, audioCtx.currentTime + 0.05);
+    gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.15);
+    
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.15);
+}
+
+function playKnifeHit() {
+    initAudio();
+    if (!audioCtx) return;
+    const osc = audioCtx.createOscillator();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+    
+    const gain = audioCtx.createGain();
+    gain.gain.setValueAtTime(1.0, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+    
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.1);
 }
