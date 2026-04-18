@@ -520,7 +520,7 @@ function spawnBear() {
         health: 105,
         fl: fl, fr: fr, bl: bl, br: br,
         walkCycle: 0,
-        moveSpeed: 8.0, 
+        moveSpeed: 4.5, // 곰 속도 느리게 수정
         attackTimer: 0,
         roarTimer: 0
     };
@@ -691,7 +691,7 @@ function killBear(b) {
     
     scene.remove(b);
     bear = null;
-    bearSpawnTimer = 5.0; 
+    bearSpawnTimer = 30.0; // 생성 시간 30초로 지연
     score += 500; updateHUD();
 }
 
@@ -999,7 +999,7 @@ function animate() {
         bear.lookAt(targetPos);
         
         if (distToPlayer > 2.0) {
-            bear.translateZ(bear.userData.moveSpeed * delta);
+            bear.translateZ(-bear.userData.moveSpeed * delta); // 음수(-Z) 방향이 머리가 있는 앞쪽입니다.
             
             bear.userData.walkCycle += delta * 10;
             bear.userData.fl.rotation.x = Math.sin(bear.userData.walkCycle) * 0.5;
