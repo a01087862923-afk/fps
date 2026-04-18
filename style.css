@@ -237,3 +237,21 @@ canvas {
     background: rgba(255, 255, 255, 0.6);
     border-color: #fff;
 }
+
+#health-container {
+    margin-top: 10px;
+    width: 200px;
+    height: 20px;
+    background: rgba(0, 0, 0, 0.5);
+    border: 2px solid white;
+    border-radius: 10px;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+#health-bar {
+    width: 100%;
+    height: 100%;
+    background: #ff3333;
+    transition: width 0.2s ease-out;
+}

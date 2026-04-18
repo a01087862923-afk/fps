@@ -33,6 +33,10 @@ const maxAmmo = 30;
 let ammo = maxAmmo;
 let isReloading = false;
 
+// 플레이어 체력
+let playerHealth = 100;
+const healthBar = document.getElementById('health-bar');
+
 const scoreElement = document.getElementById('score');
 const ammoElement = document.getElementById('ammo');
 const blocker = document.getElementById('blocker');
@@ -48,6 +52,10 @@ let knifeSpinAngle = 0;
 
 // 수류탄 물리 배열
 const activeGrenades = [];
+
+// 보스 곰
+let bear = null;
+let bearSpawnTimer = 0;
 
 init();
 animate();
@@ -146,7 +154,6 @@ function setupMobileControls() {
         reload();
     }, {passive: false});
     
-    // 무기 스위치 버튼
     document.getElementById('mobile-gun-btn').addEventListener('touchstart', (e) => { e.preventDefault(); switchWeapon(0); }, {passive: false});
     document.getElementById('mobile-knife-btn').addEventListener('touchstart', (e) => { e.preventDefault(); switchWeapon(1); }, {passive: false});
     document.getElementById('mobile-grenade-btn').addEventListener('touchstart', (e) => { e.preventDefault(); switchWeapon(2); }, {passive: false});
@@ -332,7 +339,6 @@ function createWeapon() {
     blade.position.z = -0.15;
     knifeGroup.add(blade);
     
-    // 시인성을 위해 약간 앞쪽, 위쪽으로 이동 및 살짝 눕힘
     knifeGroup.position.set(0.1, -0.1, -0.3);
     weapon.add(knifeGroup);
     
@@ -350,7 +356,6 @@ function createWeapon() {
     grenadeGroup.position.set(0.2, -0.2, -0.4);
     weapon.add(grenadeGroup);
     
-    // 기본 설정
     gunGroup.visible = true;
     knifeGroup.visible = false;
     grenadeGroup.visible = false;
@@ -367,13 +372,12 @@ function switchWeapon(index) {
         document.getElementById('mobile-grenade-btn').classList.toggle('active', index === 2);
     }
     
-    // 칼은 천천히 뽑음
     const dropTime = index === 1 ? 500 : 200; 
     let startTime = performance.now();
     
     function animateDrop() {
         let elapsed = performance.now() - startTime;
-        if (elapsed < 200) { // 내리는 건 빠르게
+        if (elapsed < 200) { 
             weapon.position.y = - (elapsed / 200) * 0.8;
             requestAnimationFrame(animateDrop);
         } else {
@@ -383,7 +387,7 @@ function switchWeapon(index) {
             
             if (index === 1) {
                 knifeSpinAngle = Math.PI * 4; 
-                playKnifeDraw(); // 칼 뽑는 소리
+                playKnifeDraw(); 
             } else {
                 knifeGroup.rotation.set(0, 0, 0);
             }
@@ -471,11 +475,69 @@ function spawnSingleEnemy() {
     enemies.push(humanoid);
 }
 
+function spawnBear() {
+    bear = new THREE.Group();
+    const bearMat = new THREE.MeshStandardMaterial({ color: 0x5c3a21, roughness: 0.9 });
+    
+    const body = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.2, 2.0), bearMat);
+    body.position.y = 1.0;
+    body.name = 'body';
+    body.castShadow = true;
+    bear.add(body);
+    
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), bearMat);
+    head.position.set(0, 1.5, -1.2);
+    head.name = 'head';
+    head.castShadow = true;
+    bear.add(head);
+    
+    const fl = new THREE.Mesh(new THREE.BoxGeometry(0.4, 1.0, 0.4), bearMat);
+    fl.position.set(-0.4, 0.5, -0.8);
+    fl.name = 'legs';
+    fl.castShadow = true;
+    bear.add(fl);
+    
+    const fr = new THREE.Mesh(new THREE.BoxGeometry(0.4, 1.0, 0.4), bearMat);
+    fr.position.set(0.4, 0.5, -0.8);
+    fr.name = 'legs';
+    fr.castShadow = true;
+    bear.add(fr);
+    
+    const bl = new THREE.Mesh(new THREE.BoxGeometry(0.4, 1.0, 0.4), bearMat);
+    bl.position.set(-0.4, 0.5, 0.8);
+    bl.name = 'legs';
+    bl.castShadow = true;
+    bear.add(bl);
+    
+    const br = new THREE.Mesh(new THREE.BoxGeometry(0.4, 1.0, 0.4), bearMat);
+    br.position.set(0.4, 0.5, 0.8);
+    br.name = 'legs';
+    br.castShadow = true;
+    bear.add(br);
+    
+    bear.userData = {
+        isBear: true,
+        health: 105,
+        fl: fl, fr: fr, bl: bl, br: br,
+        walkCycle: 0,
+        moveSpeed: 8.0, 
+        attackTimer: 0,
+        roarTimer: 0
+    };
+    
+    let validPosition = false;
+    while (!validPosition) {
+        bear.position.set((Math.random() - 0.5) * 80, 0, (Math.random() - 0.5) * 80);
+        if (bear.position.distanceTo(camera.position) > 20) validPosition = true;
+    }
+    
+    scene.add(bear);
+}
+
 function shoot() {
     if ((!isMobile && !controls.isLocked) || isSwitching) return;
     
     if (currentWeaponIndex === 0) {
-        // 총 사격
         if (isReloading || ammo <= 0) return;
         ammo--; updateHUD();
         playGunshot();
@@ -488,7 +550,6 @@ function shoot() {
         raycaster.far = 1000;
         
     } else if (currentWeaponIndex === 1) {
-        // 칼 공격
         playKnifeSwing();
         knifeGroup.position.z = -0.5;
         knifeGroup.rotation.y = -Math.PI / 4;
@@ -498,13 +559,11 @@ function shoot() {
         }, 150);
         
         raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
-        raycaster.far = 3.0; // 근거리
+        raycaster.far = 3.0; 
         
     } else if (currentWeaponIndex === 2) {
-        // 수류탄 투척
         playGrenadeThrow();
         
-        // 투척 모션
         grenadeGroup.position.z = -0.6;
         grenadeGroup.position.y = 0.1;
         setTimeout(() => { 
@@ -512,7 +571,6 @@ function shoot() {
             grenadeGroup.position.y = -0.2;
         }, 150);
         
-        // 물리 수류탄 객체 생성
         const thrownGrenade = new THREE.Group();
         const body = new THREE.Mesh(new THREE.SphereGeometry(0.15, 16, 16), new THREE.MeshStandardMaterial({ color: 0x1a4a1a }));
         thrownGrenade.add(body);
@@ -523,52 +581,94 @@ function shoot() {
         thrownGrenade.position.copy(startPos);
         
         const throwVel = throwDir.clone().multiplyScalar(20);
-        throwVel.y += 5; // 살짝 위로 던짐
+        throwVel.y += 5; 
         
         thrownGrenade.userData = { velocity: throwVel };
         scene.add(thrownGrenade);
         activeGrenades.push(thrownGrenade);
         
-        return; // 수류탄은 Raycaster 판정을 하지 않음
+        return; 
     }
 
-    // recursive: true 로 설정하여 그룹 내의 부위(Mesh)까지 검사
-    const intersects = raycaster.intersectObjects([...enemies, ...objects], true);
+    let raycastObjects = [...objects];
+    if (bear) raycastObjects.push(bear);
+    raycastObjects.push(...enemies);
+    
+    const intersects = raycaster.intersectObjects(raycastObjects, true);
 
     if (intersects.length > 0) {
         const hitObject = intersects[0].object;
         
-        if (hitObject.parent && hitObject.parent.userData && hitObject.parent.userData.isHumanoid) {
-            const humanoid = hitObject.parent;
-            const part = hitObject.name;
-            
-            let damage = 0;
-            if (part === 'head') damage = 12; // 1방
-            else if (part === 'body') damage = 4; // 3방
-            else if (part === 'legs') damage = 3; // 4방
-            
-            humanoid.userData.health -= damage;
-            
-            if (currentWeaponIndex === 0) {
-                createExplosion(intersects[0].point, hitObject.material.color);
-            } else {
-                playKnifeHit();
-                createExplosion(intersects[0].point, new THREE.Color(0xff0000)); // 피 효과
-            }
-            
-            showHitMarker();
-            
-            if (humanoid.userData.health <= 0) {
-                killEnemy(humanoid);
+        if (hitObject.parent && hitObject.parent.userData) {
+            if (hitObject.parent.userData.isHumanoid) {
+                const humanoid = hitObject.parent;
+                const part = hitObject.name;
+                
+                let damage = 0;
+                if (part === 'head') damage = 12; 
+                else if (part === 'body') damage = 4; 
+                else if (part === 'legs') damage = 3; 
+                
+                humanoid.userData.health -= damage;
+                
+                if (currentWeaponIndex === 0) {
+                    createExplosion(intersects[0].point, hitObject.material.color);
+                } else {
+                    playKnifeHit();
+                    createExplosion(intersects[0].point, new THREE.Color(0xff0000));
+                }
+                
+                showHitMarker();
+                
+                if (humanoid.userData.health <= 0) {
+                    killEnemy(humanoid);
+                }
+            } else if (hitObject.parent.userData.isBear) {
+                const b = hitObject.parent;
+                const part = hitObject.name;
+                
+                let damage = 0;
+                if (part === 'head') damage = 35; // 3방
+                else if (part === 'body') damage = 21; // 5방
+                else if (part === 'legs') damage = 15; // 7방
+                
+                b.userData.health -= damage;
+                
+                if (currentWeaponIndex === 0) {
+                    createExplosion(intersects[0].point, hitObject.material.color);
+                } else {
+                    playKnifeHit();
+                    createExplosion(intersects[0].point, new THREE.Color(0xff0000));
+                }
+                
+                showHitMarker();
+                
+                if (b.userData.health <= 0) {
+                    killBear(b);
+                }
             }
         }
+    }
+}
+
+function damagePlayer(amount) {
+    playerHealth -= amount;
+    if (playerHealth < 0) playerHealth = 0;
+    healthBar.style.width = playerHealth + '%';
+    
+    playPlayerHurt();
+    
+    if (playerHealth <= 0) {
+        score = Math.max(0, score - 500);
+        playerHealth = 100;
+        healthBar.style.width = '100%';
+        updateHUD();
     }
 }
 
 function killEnemy(enemy) {
     playDeathScream();
     
-    // 적의 색상 추출 (머리 메쉬의 색상)
     let enemyColor = 0xffaaaa;
     if (enemy.children.length > 0 && enemy.children[0].material) {
         enemyColor = enemy.children[0].material.color.getHex();
@@ -582,10 +682,22 @@ function killEnemy(enemy) {
     setTimeout(() => { spawnSingleEnemy(); }, 2000);
 }
 
+function killBear(b) {
+    playDeathScream(); 
+    playBearDeath();
+    
+    let enemyColor = 0x5c3a21;
+    createCorpse(b.position.clone(), enemyColor, true); 
+    
+    scene.remove(b);
+    bear = null;
+    bearSpawnTimer = 5.0; 
+    score += 500; updateHUD();
+}
+
 function triggerGrenadeExplosion(position) {
     playGrenadeExplosion();
     
-    // 거대한 폭발 이펙트
     const particleCount = 100;
     const geometry = new THREE.BufferGeometry();
     const positions = new Float32Array(particleCount * 3);
@@ -608,7 +720,7 @@ function triggerGrenadeExplosion(position) {
         const positions = particles.geometry.attributes.position.array;
         for (let i = 0; i < particleCount; i++) {
             positions[i * 3] += velocities[i * 3];
-            positions[i * 3 + 1] += velocities[i * 3 + 1] - 0.1; // 중력
+            positions[i * 3 + 1] += velocities[i * 3 + 1] - 0.1; 
             positions[i * 3 + 2] += velocities[i * 3 + 2];
         }
         particles.geometry.attributes.position.needsUpdate = true;
@@ -617,13 +729,27 @@ function triggerGrenadeExplosion(position) {
     }
     animateParticles();
     
-    // 반경 내 적 즉사
     const explosionRadius = 5.0;
+    
+    // 폭탄 점프
+    if (camera.position.distanceTo(position) <= explosionRadius) {
+        velocity.y = 25; 
+        canJump = false;
+    }
+    
+    // 곰 폭발 피격
+    if (bear && bear.position.distanceTo(position) <= explosionRadius * 1.5) {
+        bear.userData.health -= 35; // 수류탄 3방컷
+        createExplosion(bear.position.clone().add(new THREE.Vector3(0,1,0)), new THREE.Color(0xff0000));
+        if (bear.userData.health <= 0) {
+            killBear(bear);
+        }
+    }
+
     for (let i = enemies.length - 1; i >= 0; i--) {
         const enemy = enemies[i];
         if (enemy.position.distanceTo(position) <= explosionRadius) {
             enemy.userData.health = 0;
-            // 죽는 이펙트
             createExplosion(enemy.position.clone().add(new THREE.Vector3(0,1,0)), new THREE.Color(0xff0000));
             killEnemy(enemy);
         }
@@ -679,6 +805,41 @@ function createExplosion(position, color) {
         requestAnimationFrame(animateParticles);
     }
     animateParticles();
+}
+
+function createCorpse(position, enemyColor, isHuge = false) {
+    const scale = isHuge ? 3.0 : 1.0;
+    
+    const poolGeo = new THREE.CylinderGeometry(0.8 * scale, 0.8 * scale, 0.01, 16);
+    const poolMat = new THREE.MeshBasicMaterial({ color: 0x880000, transparent: true, opacity: 0.8 });
+    const pool = new THREE.Mesh(poolGeo, poolMat);
+    pool.position.copy(position);
+    pool.position.y = 0.01; 
+    
+    pool.scale.set(Math.random() * 0.5 + 0.8, 1, Math.random() * 0.5 + 0.8);
+    scene.add(pool);
+
+    const debrisCount = (Math.floor(Math.random() * 4) + 4) * (isHuge ? 3 : 1); 
+    for (let i = 0; i < debrisCount; i++) {
+        const size = (Math.random() * 0.3 + 0.1) * scale;
+        const geo = new THREE.BoxGeometry(size, size, size);
+        
+        const isBloody = Math.random() > 0.5;
+        const color = isBloody ? 0xaa0000 : enemyColor;
+        
+        const mat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.9 });
+        const chunk = new THREE.Mesh(geo, mat);
+        
+        chunk.position.copy(position);
+        chunk.position.x += (Math.random() - 0.5) * 1.5 * scale;
+        chunk.position.z += (Math.random() - 0.5) * 1.5 * scale;
+        chunk.position.y = size / 2 + 0.01;
+        
+        chunk.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+        chunk.castShadow = true;
+        
+        scene.add(chunk);
+    }
 }
 
 function reload() {
@@ -803,14 +964,12 @@ function animate() {
         }
     }
 
-    // 수류탄 물리 및 폭발
     for (let i = activeGrenades.length - 1; i >= 0; i--) {
         const g = activeGrenades[i];
-        g.userData.velocity.y -= 9.8 * 2.0 * delta; // 중력
+        g.userData.velocity.y -= 9.8 * 2.0 * delta; 
         g.position.add(g.userData.velocity.clone().multiplyScalar(delta));
-        g.rotation.x += 10 * delta; // 회전
+        g.rotation.x += 10 * delta; 
         
-        // 지면 충돌 검사
         if (g.position.y <= 0.15) {
             g.position.y = 0.15;
             triggerGrenadeExplosion(g.position.clone());
@@ -819,7 +978,6 @@ function animate() {
         }
     }
 
-    // 인간형 적 애니메이션
     enemies.forEach(enemy => {
         enemy.position.add(enemy.userData.moveDir.clone().multiplyScalar(enemy.userData.moveSpeed * delta));
         
@@ -833,6 +991,41 @@ function animate() {
         enemy.userData.leftLeg.rotation.x = Math.sin(enemy.userData.walkCycle) * 0.6;
         enemy.userData.rightLeg.rotation.x = Math.cos(enemy.userData.walkCycle) * 0.6;
     });
+
+    if (bear) {
+        const distToPlayer = bear.position.distanceTo(camera.position);
+        const targetPos = camera.position.clone();
+        targetPos.y = 0;
+        bear.lookAt(targetPos);
+        
+        if (distToPlayer > 2.0) {
+            bear.translateZ(bear.userData.moveSpeed * delta);
+            
+            bear.userData.walkCycle += delta * 10;
+            bear.userData.fl.rotation.x = Math.sin(bear.userData.walkCycle) * 0.5;
+            bear.userData.br.rotation.x = Math.sin(bear.userData.walkCycle) * 0.5;
+            bear.userData.fr.rotation.x = Math.cos(bear.userData.walkCycle) * 0.5;
+            bear.userData.bl.rotation.x = Math.cos(bear.userData.walkCycle) * 0.5;
+            
+            bear.userData.roarTimer -= delta;
+            if (bear.userData.roarTimer <= 0) {
+                playBearRoar();
+                bear.userData.roarTimer = Math.random() * 3 + 2; 
+            }
+        } else {
+            bear.userData.attackTimer -= delta;
+            if (bear.userData.attackTimer <= 0) {
+                damagePlayer(15);
+                bear.userData.attackTimer = 1.0; 
+            }
+        }
+    } else {
+        bearSpawnTimer -= delta;
+        if (bearSpawnTimer <= 0) {
+            spawnBear();
+            bearSpawnTimer = 9999;
+        }
+    }
 
     prevTime = time;
     renderer.render(scene, camera);
@@ -988,43 +1181,6 @@ function playGrenadeExplosion() {
     noiseSource.start();
 }
 
-function createCorpse(position, enemyColor) {
-    // 1. 피 웅덩이 (납작한 원)
-    const poolGeo = new THREE.CylinderGeometry(0.8, 0.8, 0.01, 16);
-    const poolMat = new THREE.MeshBasicMaterial({ color: 0x880000, transparent: true, opacity: 0.8 });
-    const pool = new THREE.Mesh(poolGeo, poolMat);
-    pool.position.copy(position);
-    pool.position.y = 0.01; // Z-fighting 방지
-    
-    // 크기 무작위 조절
-    pool.scale.set(Math.random() * 0.5 + 0.8, 1, Math.random() * 0.5 + 0.8);
-    scene.add(pool);
-
-    // 2. 시체 잔해 (피부색 + 붉은색 섞인 상자들)
-    const debrisCount = Math.floor(Math.random() * 4) + 4; // 4~7개
-    for (let i = 0; i < debrisCount; i++) {
-        const size = Math.random() * 0.3 + 0.1;
-        const geo = new THREE.BoxGeometry(size, size, size);
-        
-        // 피 묻은 색상 또는 원래 피부색
-        const isBloody = Math.random() > 0.5;
-        const color = isBloody ? 0xaa0000 : enemyColor;
-        
-        const mat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.9 });
-        const chunk = new THREE.Mesh(geo, mat);
-        
-        chunk.position.copy(position);
-        chunk.position.x += (Math.random() - 0.5) * 1.5;
-        chunk.position.z += (Math.random() - 0.5) * 1.5;
-        chunk.position.y = size / 2 + 0.01;
-        
-        chunk.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
-        chunk.castShadow = true;
-        
-        scene.add(chunk);
-    }
-}
-
 function playDeathScream() {
     initAudio();
     if (!audioCtx) return;
@@ -1034,7 +1190,6 @@ function playDeathScream() {
     const gain = audioCtx.createGain();
     
     if (pattern === 0) {
-        // 고음 비명 (꺄악!)
         osc.type = 'sawtooth';
         osc.frequency.setValueAtTime(800, audioCtx.currentTime);
         osc.frequency.exponentialRampToValueAtTime(100, audioCtx.currentTime + 0.5);
@@ -1043,7 +1198,6 @@ function playDeathScream() {
         osc.start();
         osc.stop(audioCtx.currentTime + 0.5);
     } else if (pattern === 1) {
-        // 굵고 짧은 비명 (으악!)
         osc.type = 'square';
         osc.frequency.setValueAtTime(300, audioCtx.currentTime);
         osc.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + 0.3);
@@ -1052,12 +1206,10 @@ function playDeathScream() {
         osc.start();
         osc.stop(audioCtx.currentTime + 0.3);
     } else {
-        // 기괴한 앓는 소리 (크윽..)
         osc.type = 'triangle';
         osc.frequency.setValueAtTime(150, audioCtx.currentTime);
         osc.frequency.linearRampToValueAtTime(80, audioCtx.currentTime + 0.6);
         
-        // 약간의 주파수 변조(떨림) 효과
         const lfo = audioCtx.createOscillator();
         lfo.type = 'sine';
         lfo.frequency.value = 15;
@@ -1076,4 +1228,58 @@ function playDeathScream() {
     
     osc.connect(gain);
     gain.connect(audioCtx.destination);
+}
+
+function playBearRoar() {
+    initAudio();
+    if (!audioCtx) return;
+    const osc = audioCtx.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(120, audioCtx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(40, audioCtx.currentTime + 1.0);
+    
+    const gain = audioCtx.createGain();
+    gain.gain.setValueAtTime(0.8, audioCtx.currentTime);
+    gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 1.0);
+    
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + 1.0);
+}
+
+function playBearDeath() {
+    initAudio();
+    if (!audioCtx) return;
+    const osc = audioCtx.createOscillator();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(80, audioCtx.currentTime);
+    osc.frequency.linearRampToValueAtTime(10, audioCtx.currentTime + 1.5);
+    
+    const gain = audioCtx.createGain();
+    gain.gain.setValueAtTime(1.5, audioCtx.currentTime);
+    gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 1.5);
+    
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + 1.5);
+}
+
+function playPlayerHurt() {
+    initAudio();
+    if (!audioCtx) return;
+    const osc = audioCtx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(500, audioCtx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(100, audioCtx.currentTime + 0.3);
+    
+    const gain = audioCtx.createGain();
+    gain.gain.setValueAtTime(1.0, audioCtx.currentTime);
+    gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+    
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.3);
 }
