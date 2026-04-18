@@ -508,9 +508,17 @@ function animate() {
         let nextZ = playerPos.z + velocity.z * delta;
         
         // 회전을 고려한 이동 벡터 계산
-        const eulerY = new THREE.Euler(0, camera.rotation.y, 0, 'YXZ');
-        const movementVector = new THREE.Vector3(-velocity.x * delta, 0, velocity.z * delta);
-        movementVector.applyEuler(eulerY);
+        const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+        forward.y = 0;
+        forward.normalize();
+        
+        const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+        right.y = 0;
+        right.normalize();
+
+        const movementVector = new THREE.Vector3();
+        movementVector.addScaledVector(right, -velocity.x * delta);
+        movementVector.addScaledVector(forward, -velocity.z * delta);
 
         let finalNextX = playerPos.x + movementVector.x;
         let finalNextZ = playerPos.z + movementVector.z;
@@ -586,28 +594,42 @@ function playGunshot() {
     initAudio();
     if (!audioCtx) return;
     
-    const bufferSize = audioCtx.sampleRate * 0.3; 
+    // 1. 노이즈 (High frequency snap)
+    const bufferSize = audioCtx.sampleRate * 0.2; 
     const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
     const data = buffer.getChannelData(0);
-    
     for (let i = 0; i < bufferSize; i++) {
         data[i] = Math.random() * 2 - 1;
     }
-    
     const noiseSource = audioCtx.createBufferSource();
     noiseSource.buffer = buffer;
     
-    const filter = audioCtx.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.value = 1500;
+    const noiseFilter = audioCtx.createBiquadFilter();
+    noiseFilter.type = 'bandpass';
+    noiseFilter.frequency.value = 4000;
     
-    const gainNode = audioCtx.createGain();
-    gainNode.gain.setValueAtTime(0.8, audioCtx.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+    const noiseGain = audioCtx.createGain();
+    noiseGain.gain.setValueAtTime(1.5, audioCtx.currentTime);
+    noiseGain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
     
-    noiseSource.connect(filter);
-    filter.connect(gainNode);
-    gainNode.connect(audioCtx.destination);
+    noiseSource.connect(noiseFilter);
+    noiseFilter.connect(noiseGain);
+    noiseGain.connect(audioCtx.destination);
+    
+    // 2. 오실레이터 (Low frequency thump)
+    const osc = audioCtx.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(200, audioCtx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+    
+    const oscGain = audioCtx.createGain();
+    oscGain.gain.setValueAtTime(1.5, audioCtx.currentTime);
+    oscGain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+    
+    osc.connect(oscGain);
+    oscGain.connect(audioCtx.destination);
     
     noiseSource.start();
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.2);
 }
