@@ -520,7 +520,7 @@ function spawnBear() {
         health: 105,
         fl: fl, fr: fr, bl: bl, br: br,
         walkCycle: 0,
-        moveSpeed: 4.5, // 곰 속도 느리게 수정
+        moveSpeed: 2.0, // 곰 속도 더 느리게 (기존 4.5 -> 2.0)
         attackTimer: 0,
         roarTimer: 0
     };
@@ -999,7 +999,9 @@ function animate() {
         bear.lookAt(targetPos);
         
         if (distToPlayer > 2.0) {
-            bear.translateZ(-bear.userData.moveSpeed * delta); // 음수(-Z) 방향이 머리가 있는 앞쪽입니다.
+            // 절대 벡터로 위치 이동 (반대 방향으로 가는 문제 원천 차단)
+            const moveDir = targetPos.clone().sub(bear.position).normalize();
+            bear.position.add(moveDir.multiplyScalar(bear.userData.moveSpeed * delta));
             
             bear.userData.walkCycle += delta * 10;
             bear.userData.fl.rotation.x = Math.sin(bear.userData.walkCycle) * 0.5;
