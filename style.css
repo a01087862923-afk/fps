@@ -173,6 +173,25 @@ canvas {
     pointer-events: auto;
 }
 
+#mobile-reload-btn {
+    position: absolute;
+    bottom: 130px;
+    right: 50px;
+    width: 60px;
+    height: 60px;
+    background: rgba(255, 255, 255, 0.2);
+    border: 2px solid rgba(255, 255, 255, 0.4);
+    border-radius: 50%;
+    color: white;
+    font-weight: bold;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    pointer-events: auto;
+    user-select: none;
+    font-size: 12px;
+}
+
 #mobile-jump-btn {
     position: absolute;
     bottom: 40px;

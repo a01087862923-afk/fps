@@ -135,6 +135,13 @@ function setupMobileControls() {
         canJump = false;
     }, {passive: false});
 
+    // 재장전 버튼
+    const reloadBtn = document.getElementById('mobile-reload-btn');
+    reloadBtn.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        reload();
+    }, {passive: false});
+
     // 조이스틱
     const joystickZone = document.getElementById('joystick-zone');
     const joystickStick = document.getElementById('joystick-stick');
@@ -501,7 +508,7 @@ function animate() {
         
         // 회전을 고려한 이동 벡터 계산
         const eulerY = new THREE.Euler(0, camera.rotation.y, 0, 'YXZ');
-        const movementVector = new THREE.Vector3(-velocity.x * delta, 0, -velocity.z * delta);
+        const movementVector = new THREE.Vector3(-velocity.x * delta, 0, velocity.z * delta);
         movementVector.applyEuler(eulerY);
 
         let finalNextX = playerPos.x + movementVector.x;
