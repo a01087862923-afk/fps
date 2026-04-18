@@ -566,6 +566,15 @@ function shoot() {
 }
 
 function killEnemy(enemy) {
+    playDeathScream();
+    
+    // 적의 색상 추출 (머리 메쉬의 색상)
+    let enemyColor = 0xffaaaa;
+    if (enemy.children.length > 0 && enemy.children[0].material) {
+        enemyColor = enemy.children[0].material.color.getHex();
+    }
+    createCorpse(enemy.position.clone(), enemyColor);
+
     scene.remove(enemy);
     const index = enemies.indexOf(enemy);
     if (index > -1) enemies.splice(index, 1);
@@ -977,4 +986,94 @@ function playGrenadeExplosion() {
     noiseGain.connect(audioCtx.destination);
     
     noiseSource.start();
+}
+
+function createCorpse(position, enemyColor) {
+    // 1. 피 웅덩이 (납작한 원)
+    const poolGeo = new THREE.CylinderGeometry(0.8, 0.8, 0.01, 16);
+    const poolMat = new THREE.MeshBasicMaterial({ color: 0x880000, transparent: true, opacity: 0.8 });
+    const pool = new THREE.Mesh(poolGeo, poolMat);
+    pool.position.copy(position);
+    pool.position.y = 0.01; // Z-fighting 방지
+    
+    // 크기 무작위 조절
+    pool.scale.set(Math.random() * 0.5 + 0.8, 1, Math.random() * 0.5 + 0.8);
+    scene.add(pool);
+
+    // 2. 시체 잔해 (피부색 + 붉은색 섞인 상자들)
+    const debrisCount = Math.floor(Math.random() * 4) + 4; // 4~7개
+    for (let i = 0; i < debrisCount; i++) {
+        const size = Math.random() * 0.3 + 0.1;
+        const geo = new THREE.BoxGeometry(size, size, size);
+        
+        // 피 묻은 색상 또는 원래 피부색
+        const isBloody = Math.random() > 0.5;
+        const color = isBloody ? 0xaa0000 : enemyColor;
+        
+        const mat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.9 });
+        const chunk = new THREE.Mesh(geo, mat);
+        
+        chunk.position.copy(position);
+        chunk.position.x += (Math.random() - 0.5) * 1.5;
+        chunk.position.z += (Math.random() - 0.5) * 1.5;
+        chunk.position.y = size / 2 + 0.01;
+        
+        chunk.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+        chunk.castShadow = true;
+        
+        scene.add(chunk);
+    }
+}
+
+function playDeathScream() {
+    initAudio();
+    if (!audioCtx) return;
+    
+    const pattern = Math.floor(Math.random() * 3);
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    
+    if (pattern === 0) {
+        // 고음 비명 (꺄악!)
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(100, audioCtx.currentTime + 0.5);
+        gain.gain.setValueAtTime(0.8, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.5);
+    } else if (pattern === 1) {
+        // 굵고 짧은 비명 (으악!)
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(300, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + 0.3);
+        gain.gain.setValueAtTime(1.0, audioCtx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.3);
+    } else {
+        // 기괴한 앓는 소리 (크윽..)
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+        osc.frequency.linearRampToValueAtTime(80, audioCtx.currentTime + 0.6);
+        
+        // 약간의 주파수 변조(떨림) 효과
+        const lfo = audioCtx.createOscillator();
+        lfo.type = 'sine';
+        lfo.frequency.value = 15;
+        const lfoGain = audioCtx.createGain();
+        lfoGain.gain.value = 20;
+        lfo.connect(lfoGain);
+        lfoGain.connect(osc.frequency);
+        lfo.start();
+        lfo.stop(audioCtx.currentTime + 0.6);
+
+        gain.gain.setValueAtTime(0.7, audioCtx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.6);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.6);
+    }
+    
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
 }
