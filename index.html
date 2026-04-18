@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>복잡한 도형 FPS</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- Import maps polyfill -->
+    <script async src="https://unpkg.com/es-module-shims@1.8.0/dist/es-module-shims.js"></script>
+    <!-- Three.js Import Map -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+    <div id="ui">
+        <div id="crosshair"></div>
+        <div id="score">SCORE: 0</div>
+        <div id="ammo">AMMO: 30 / 30</div>
+    </div>
+    
+    <div id="blocker">
+        <div id="instructions">
+            <span style="font-size:36px">클릭하여 시작</span>
+            <br /><br />
+            W, A, S, D = 이동<br/>
+            SPACE = 점프<br/>
+            마우스 = 시야 이동<br/>
+            클릭 = 사격
+        </div>
+    </div>
+
+    <!-- 모바일 터치 UI -->
+    <div id="mobile-ui" style="display: none;">
+        <div id="joystick-zone">
+            <div id="joystick-base">
+                <div id="joystick-stick"></div>
+            </div>
+        </div>
+        <div id="touch-look-zone"></div>
+        <div id="mobile-jump-btn">JUMP</div>
+    </div>
+
+    <script type="module" src="main.js"></script>
+</body>
+</html>
